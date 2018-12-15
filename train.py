@@ -1,4 +1,5 @@
-#! /usr/bin/env python
+#! /usr/bin/python
+# -*- coding: utf-8 -*-
 
 import tensorflow as tf
 import numpy as np
@@ -8,6 +9,8 @@ import datetime
 import data_helpers
 from text_cnn import TextCNN
 from tensorflow.contrib import learn
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = "7"
 
 # Parameters
 # ==================================================
@@ -27,12 +30,12 @@ tf.flags.DEFINE_float("l2_reg_lambda", 0.0, "L2 regularization lambda (default: 
 # Training parameters
 tf.flags.DEFINE_integer("batch_size", 64, "Batch Size (default: 64)")
 tf.flags.DEFINE_integer("num_epochs", 200, "Number of training epochs (default: 200)")
-tf.flags.DEFINE_integer("evaluate_every", 100, "Evaluate model on dev set after this many steps (default: 100)")
-tf.flags.DEFINE_integer("checkpoint_every", 100, "Save model after this many steps (default: 100)")
+tf.flags.DEFINE_integer("evaluate_every", 200, "Evaluate model on dev set after this many steps (default: 100)")
+tf.flags.DEFINE_integer("checkpoint_every", 200, "Save model after this many steps (default: 100)")
 tf.flags.DEFINE_integer("num_checkpoints", 5, "Number of checkpoints to store (default: 5)")
 # Misc Parameters
 tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
-tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on devices")
+tf.flags.DEFINE_boolean("log_device_placement", True, "Log placement of ops on devices")
 
 FLAGS = tf.flags.FLAGS
 # FLAGS._parse_flags()
@@ -76,7 +79,7 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
     # Training
     # ==================================================
 
-    with tf.Graph().as_default():
+    with tf.device("/gpu:0"), tf.Graph().as_default():
         session_conf = tf.ConfigProto(
           allow_soft_placement=FLAGS.allow_soft_placement,
           log_device_placement=FLAGS.log_device_placement)
@@ -175,18 +178,20 @@ def train(x_train, y_train, vocab_processor, x_dev, y_dev):
             # Generate batches
             batches = data_helpers.batch_iter(
                 list(zip(x_train, y_train)), FLAGS.batch_size, FLAGS.num_epochs)
+            
             # Training loop. For each batch...
-            for batch in batches:
-                x_batch, y_batch = zip(*batch)
-                train_step(x_batch, y_batch)
-                current_step = tf.train.global_step(sess, global_step)
-                if current_step % FLAGS.evaluate_every == 0:
-                    print("\nEvaluation:")
-                    dev_step(x_dev, y_dev, writer=dev_summary_writer)
-                    print("")
-                if current_step % FLAGS.checkpoint_every == 0:
-                    path = saver.save(sess, checkpoint_prefix, global_step=current_step)
-                    print("Saved model checkpoint to {}\n".format(path))
+            with tf.device('/gpu:0'):
+                for batch in batches:
+                    x_batch, y_batch = zip(*batch)
+                    train_step(x_batch, y_batch)
+                    current_step = tf.train.global_step(sess, global_step)
+                    if current_step % FLAGS.evaluate_every == 0:
+                        print("\nEvaluation:")
+                        dev_step(x_dev, y_dev, writer=dev_summary_writer)
+                        print("")
+                    if current_step % FLAGS.checkpoint_every == 0:
+                        path = saver.save(sess, checkpoint_prefix, global_step=current_step)
+                        print("Saved model checkpoint to {}\n".format(path))
 
 def main(argv=None):
     x_train, y_train, vocab_processor, x_dev, y_dev = preprocess()
